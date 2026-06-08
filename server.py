@@ -121,7 +121,8 @@ document.getElementById('lineCount').textContent=L.length+' / '+allLines.length+
 fetch('/api/logs-raw').then(r=>r.json()).then(d=>{allLines=d.lines||[];showLines(50)});
 setInterval(()=>fetch('/api/logs-raw').then(r=>r.json()).then(d=>{allLines=d.lines||[];showLines(50)}),10000);
 </script>
-</body>
+</body>"""
+
 HTML = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
