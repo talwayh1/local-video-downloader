@@ -262,8 +262,34 @@ class Handler(BaseHTTPRequestHandler):
 
         self._send_json({"ok": False, "error": "Not found"}, 404)
 
+    def _get_safe_filename(self, url, format_id):
+        """Get sanitized filename from yt-dlp, returns safe ASCII filename."""
+        try:
+            result = subprocess.run(
+                ["yt-dlp", "--get-filename", "-f", format_id,
+                 "--no-warnings", "--no-playlist", "--socket-timeout", "10", url],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                raw = result.stdout.strip().split("\n")[0]
+                # Extract just the filename (remove path)
+                import os as _os
+                name = _os.path.basename(raw)
+                # Remove extension, sanitize
+                name = name.rsplit(".", 1)[0] if "." in name else name
+                # Keep only safe chars, replace spaces
+                safe = "".join(c if c.isalnum() or c in " ._-" else "_" for c in name)[:100]
+                return safe.strip() or "video"
+        except Exception:
+            pass
+        return "video"
+
     def _stream_video(self, url, format_id):
         """Stream video to client using yt-dlp stdout pipe — single call, no separate extract."""
+        # Get proper filename first
+        safe_name = self._get_safe_filename(url, format_id)
+        ext = "mp4"  # default
+
         cmd = [
             "yt-dlp", url,
             "-f", format_id,
@@ -278,7 +304,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "video/mp4")
             self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Content-Disposition", "attachment; filename=\"video.mp4\"")
+            self.send_header("Content-Disposition",
+                f'attachment; filename="{safe_name}.{ext}"; '
+                f'filename*=UTF-8\'\'{urllib.parse.quote(safe_name)}.{ext}')
             self.end_headers()
 
             chunk_size = 64 * 1024

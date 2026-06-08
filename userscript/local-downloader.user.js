@@ -2,7 +2,7 @@
 // @name        All-in-One Video Downloader – HD (Local API)
 // @description Local video downloader using self-hosted yt-dlp API instead of tool77.com
 // @namespace   AllInOneDownloader_Local
-// @version     2.0.0
+// @version     2.2
 // @author      Local (modified from Daniel)
 // @include     https://www.ted.com/*
 // @include     https://*.youtube.com/*
@@ -58,38 +58,52 @@
 
 (function() {
     'use strict';
-    console.log('[LocalDL] ✅ Script loaded v2.1');
+    console.log('[LocalDL] ✅ Script loaded v2.2');
     console.log('[LocalDL] 📍 Page:', window.location.href);
-    console.log('[LocalDL] 🔗 API:', API_BASE);
+    console.log('[LocalDL] 🔗 API:', GM_getValue("local_dl_api", "http://100.80.1.3:8765"));
     console.log('[LocalDL] 📱 Touch:', 'ontouchstart' in window ? 'YES' : 'no');
 
-    // ====================== MOBILE FLOATING BUTTON ======================
+    var API_BASE = GM_getValue("local_dl_api", "http://100.80.1.3:8765");
+
+    // ====================== FLOATING BUTTON (runs BEFORE everything) ======================
     function createFloatingButton() {
-        if (document.getElementById('localdl-float')) return;
-        const btn = document.createElement('div');
+        if (document.getElementById('localdl-float')) return true;
+        var btn = document.createElement('div');
         btn.id = 'localdl-float';
-        btn.innerHTML = '⬇';
-        btn.style.cssText = 'position:fixed;bottom:20px;right:20px;width:56px;height:56px;background:#ff0050;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;z-index:2147483646;box-shadow:0 4px 16px rgba(255,0,80,0.5);cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;';
+        btn.textContent = '⬇';
+        btn.setAttribute('style',
+            'position:fixed!important;bottom:20px!important;right:20px!important;' +
+            'width:60px!important;height:60px!important;background:#ff0050!important;' +
+            'color:#fff!important;border-radius:50%!important;' +
+            'display:flex!important;align-items:center!important;justify-content:center!important;' +
+            'font-size:28px!important;font-weight:bold!important;z-index:2147483646!important;' +
+            'box-shadow:0 4px 20px rgba(255,0,80,0.6)!important;' +
+            'cursor:pointer!important;user-select:none!important;' +
+            '-webkit-tap-highlight-color:transparent!important;' +
+            'pointer-events:auto!important;'
+        );
         btn.onclick = function(e) {
             e.preventDefault(); e.stopPropagation();
-            console.log('[LocalDL] 📥 Floating button clicked');
-            CommonUtils.localDownloaderEvent(window.location.href);
+            console.log('[LocalDL] 📥 Float button clicked');
+            window.open(API_BASE + '/api/download?url=' + encodeURIComponent(window.location.href), '_blank');
         };
+        btn.ontouchend = btn.onclick;
         document.body.appendChild(btn);
-        console.log('[LocalDL] 🔴 Floating button created');
+        console.log('[LocalDL] 🔴 Floating button CREATED at bottom-right');
+        return true;
     }
 
-    // Wait for body, then add button
-    function waitForBody() {
+    // TRIPLE insurance: try now, on DOM ready, and after a delay
+    function tryCreate() {
         if (document.body) { createFloatingButton(); return; }
-        setTimeout(waitForBody, 100);
+        setTimeout(tryCreate, 50);
     }
-    waitForBody();
+    tryCreate();
+    document.addEventListener('DOMContentLoaded', createFloatingButton);
+    setTimeout(createFloatingButton, 2000);
 
     // ====================== CONFIGURATION ======================
-    // Change this to your local video downloader API server
-    const API_BASE = GM_getValue("local_dl_api", "http://100.80.1.3:8765");
-
+    // API_BASE already set above — floating button uses it directly
     // ====================== COMMON UTILS ======================
     const CommonUtils = {
         getSupportedLang: function() {
