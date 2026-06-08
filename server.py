@@ -14,6 +14,20 @@ import subprocess
 import sys
 import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import time
+
+# Simple in-memory cache for extract results (TTL: 300 seconds)
+_cache = {}
+_CACHE_TTL = 300
+
+def _cached_extract(url, simple=False):
+    now = time.time()
+    key = url + ("_simple" if simple else "")
+    if key in _cache and (now - _cache[key]["ts"]) < _CACHE_TTL:
+        return _cache[key]["data"]
+    result = extract_simple(url) if simple else extract(url)
+    _cache[key] = {"data": result, "ts": now}
+    return result
 
 # Add extractor to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -214,7 +228,7 @@ class Handler(BaseHTTPRequestHandler):
             if not url:
                 self._send_json({"ok": False, "error": "Missing ?url= parameter"}, 400)
                 return
-            result = extract(url)
+            result = _cached_extract(url)
             self._send_json(result)
             return
 
@@ -224,8 +238,18 @@ class Handler(BaseHTTPRequestHandler):
             if not url:
                 self._send_json({"ok": False, "error": "Missing ?url= parameter"}, 400)
                 return
-            result = extract_simple(url)
+            result = _cached_extract(url, simple=True)
             self._send_json(result)
+            return
+
+        if parsed.path == "/api/download":
+            # Fast one-shot download: extract + stream best quality in single yt-dlp call
+            qs = urllib.parse.parse_qs(parsed.query)
+            url = qs.get("url", [""])[0]
+            if not url:
+                self._send_json({"ok": False, "error": "Missing ?url= parameter"}, 400)
+                return
+            self._stream_video(url, "best")
             return
 
         if parsed.path == "/" or parsed.path == "":
@@ -238,42 +262,25 @@ class Handler(BaseHTTPRequestHandler):
 
         self._send_json({"ok": False, "error": "Not found"}, 404)
 
-    def _handle_proxy_download(self, parsed):
-        """Proxy download: use yt-dlp to download video to stdout and stream to client."""
-        qs = urllib.parse.parse_qs(parsed.query)
-        url = qs.get("url", [""])[0]
-        format_id = qs.get("format", ["best"])[0]
-
-        if not url:
-            self._send_json({"ok": False, "error": "Missing ?url= parameter"}, 400)
-            return
-
-        # Use yt-dlp to download directly to stdout — it handles all auth/session/headers internally
+    def _stream_video(self, url, format_id):
+        """Stream video to client using yt-dlp stdout pipe — single call, no separate extract."""
         cmd = [
             "yt-dlp", url,
             "-f", format_id,
-            "-o", "-",           # output to stdout
-            "--no-warnings",
-            "--no-playlist",
+            "-o", "-",
+            "--no-warnings", "--no-playlist",
             "--socket-timeout", "30",
-            "--no-progress",      # suppress progress bar on stderr
-            "--quiet",            # be quiet on stderr
+            "--no-progress", "--quiet",
         ]
 
         try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             self.send_response(200)
             self.send_header("Content-Type", "video/mp4")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Content-Disposition", "attachment; filename=\"video.mp4\"")
             self.end_headers()
 
-            # Stream yt-dlp stdout to client
             chunk_size = 64 * 1024
             while True:
                 chunk = proc.stdout.read(chunk_size)
@@ -286,17 +293,24 @@ class Handler(BaseHTTPRequestHandler):
                     return
 
             proc.wait(timeout=10)
-            # Check if yt-dlp succeeded
             if proc.returncode != 0:
-                stderr_out = proc.stderr.read().decode("utf-8", errors="ignore")
-                # Client already got partial data, log the error
-                print(f"[proxy-download] yt-dlp error: {stderr_out[:200]}")
-
+                err = proc.stderr.read().decode("utf-8", errors="ignore")
+                print(f"[stream] yt-dlp error: {err[:200]}")
         except Exception as e:
             try:
                 self._send_json({"ok": False, "error": f"Download failed: {e}"}, 502)
             except Exception:
                 pass
+
+    def _handle_proxy_download(self, parsed):
+        """Proxy download endpoint — delegates to streaming method."""
+        qs = urllib.parse.parse_qs(parsed.query)
+        url = qs.get("url", [""])[0]
+        format_id = qs.get("format", ["best"])[0]
+        if not url:
+            self._send_json({"ok": False, "error": "Missing ?url= parameter"}, 400)
+            return
+        self._stream_video(url, format_id)
 
 
 def main():

@@ -131,6 +131,16 @@
         },
 
         showFormatSelector: async function(url) {
+            // Fast download: skip format selector, start downloading immediately
+            this._tryFastDownload(url);
+        },
+
+        _tryFastDownload: function(url) {
+            const dlUrl = API_BASE + "/api/download?url=" + encodeURIComponent(url);
+            window.open(dlUrl, "_blank");
+        },
+
+        showFormatSelectorUI: async function(url) {
             const data = await this.apiExtract(url);
             if (!data.ok) {
                 alert("Failed to extract video: " + (data.error || "Unknown error"));
