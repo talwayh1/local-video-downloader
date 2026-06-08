@@ -263,32 +263,37 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"ok": False, "error": "Not found"}, 404)
 
     def _get_safe_filename(self, url, format_id):
-        """Get sanitized filename from yt-dlp, returns safe ASCII filename."""
+        """Get sanitized filename from yt-dlp, returns (ascii_safe, unicode_original)."""
         try:
             result = subprocess.run(
                 ["yt-dlp", "--get-filename", "-f", format_id,
                  "--no-warnings", "--no-playlist", "--socket-timeout", "10", url],
-                capture_output=True, text=True, timeout=15
+                capture_output=True, timeout=15,
+                env={**__import__("os").environ, "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"}
             )
             if result.returncode == 0 and result.stdout.strip():
-                raw = result.stdout.strip().split("\n")[0]
+                raw = result.stdout.decode("utf-8", errors="replace").strip().split("\n")[0]
                 # Extract just the filename (remove path)
-                import os as _os
-                name = _os.path.basename(raw)
-                # Remove extension, sanitize
-                name = name.rsplit(".", 1)[0] if "." in name else name
-                # Keep only safe chars, replace spaces
-                safe = "".join(c if c.isalnum() or c in " ._-" else "_" for c in name)[:100]
-                return safe.strip() or "video"
-        except Exception:
-            pass
-        return "video"
+                name = raw.rsplit("/", 1)[-1] if "/" in raw else raw
+                # Remove extension
+                if "." in name:
+                    name = name.rsplit(".", 1)[0]
+                # Create ASCII-safe version (drop all non-ASCII)
+                safe = "".join(c if ord(c) < 128 and (c.isalnum() or c in " ._-") else "_" for c in name).strip("_")[:100]
+                if not safe or safe == "_":
+                    safe = "video"
+                return safe, name
+        except Exception as e:
+            print(f"[filename] failed: {e}")
+        return "video", "video"
 
     def _stream_video(self, url, format_id):
         """Stream video to client using yt-dlp stdout pipe — single call, no separate extract."""
-        # Get proper filename first
-        safe_name = self._get_safe_filename(url, format_id)
-        ext = "mp4"  # default
+        try:
+            safe_name, orig_name = self._get_safe_filename(url, format_id)
+        except Exception:
+            safe_name, orig_name = "video", "video"
+        ext = "mp4"
 
         cmd = [
             "yt-dlp", url,
@@ -304,9 +309,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "video/mp4")
             self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Content-Disposition",
-                f'attachment; filename="{safe_name}.{ext}"; '
-                f'filename*=UTF-8\'\'{urllib.parse.quote(safe_name)}.{ext}')
+            # ASCII-only filename for HTTP header (latin-1 safe)
+            disp = f'attachment; filename="{safe_name}.{ext}"'
+            self.send_header("Content-Disposition", disp)
             self.end_headers()
 
             chunk_size = 64 * 1024
