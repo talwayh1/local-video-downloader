@@ -160,13 +160,8 @@ def _pick_best_format(formats: list) -> Optional[dict]:
     mp4_combined = [f for f in combined if f["ext"] == "mp4"]
     candidates = mp4_combined or combined or video_only or audio_only or formats
 
-    # Sort by height desc, then filesize desc
+    # Sort by height desc, then filesize desc — take the absolute best (no cap)
     candidates.sort(key=lambda f: (f.get("height", 0) or 0, f.get("filesize", 0) or 0), reverse=True)
-
-    # Cap at 1080p for browser playback compatibility
-    for f in candidates:
-        if (f.get("height") or 0) <= 1080:
-            return f
     return candidates[0] if candidates else None
 
 
