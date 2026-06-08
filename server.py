@@ -36,9 +36,14 @@ def _update_ytdlp():
     global _ytdlp_version
     old = _get_ytdlp_version()
     try:
+        env = os.environ.copy()
+        # Use proxy if available (for pip install speed behind GFW)
+        if os.environ.get("http_proxy"):
+            env["http_proxy"] = os.environ["http_proxy"]
+            env["https_proxy"] = os.environ.get("https_proxy", os.environ["http_proxy"])
         r = subprocess.run(
             ["pip", "install", "--no-cache-dir", "--upgrade", "yt-dlp"],
-            capture_output=True, text=True, timeout=120
+            capture_output=True, text=True, timeout=120, env=env
         )
         new = _get_ytdlp_version()
         _ytdlp_version = new
