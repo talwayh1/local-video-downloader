@@ -111,6 +111,7 @@ async function doExtract() {
     const api = '/api/extract?url=' + encodeURIComponent(url);
     const resp = await fetch(api);
     const data = await resp.json();
+    const origUrl = encodeURIComponent(url);  // for proxy download links
 
     if (!data.ok) {
       resultDiv.innerHTML = '<div class="error">' + (data.error || 'Unknown error') + '</div>';
@@ -127,9 +128,7 @@ async function doExtract() {
         html += '<span class="res">' + (f.resolution || f.format_note || 'unknown') + '</span>';
         html += '<span class="ext">' + (f.ext || '') + '</span>';
         html += '<span class="size">' + formatSize(f.filesize) + '</span>';
-        if (f.url) {
-          html += '<a href="' + f.url + '" target="_blank">Download</a>';
-        }
+        html += '<a href="/api/proxy-download?url=' + origUrl + '&format=' + f.format_id + '" target="_blank">Download</a>';
         html += '</div>';
       });
       if (formats.length > 20) {
@@ -137,10 +136,8 @@ async function doExtract() {
       }
       html += '</div>';
 
-      // Best direct URL
-      if (data.best_url) {
-        html += '<div style="margin-top:16px"><a href="' + data.best_url + '" target="_blank" style="font-size:1em;padding:8px 16px;background:#238636;border-radius:4px;display:inline-block">⬇ Download Best Quality</a></div>';
-      }
+      // Best quality via proxy download
+      html += '<div style="margin-top:16px"><a href="/api/proxy-download?url=' + origUrl + '&format=best" target="_blank" style="font-size:1em;padding:8px 16px;background:#238636;border-radius:4px;display:inline-block">⬇ Download Best Quality</a></div>';
       resultDiv.innerHTML = html;
     }
   } catch (e) {
