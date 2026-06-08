@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """Local video extraction HTTP API server.
+
 Usage: python3 server.py [--port 8765] [--host 0.0.0.0]
+
 Endpoints:
   GET /api/extract?url=<encoded_url>       -> full JSON with all formats
   GET /api/extract-simple?url=<encoded_url> -> simplified (best URL only)
-  GET /api/health                          -> health check
-  GET /                                    -> simple web UI
+  GET /api/health                          -> health check (+ ytdlp_version)
+  GET /api/logs-raw                        -> raw log lines for /logs page
+  GET /api/update                          -> manual yt-dlp update trigger
+  GET /api/download?url=<...>              -> one-shot extract + stream
+  GET /api/proxy-download?url=<...>        -> proxy download with format
+  GET /                                     -> web UI
+  GET /logs                                 -> log viewer (auto-refresh)
 """
 
 import json
