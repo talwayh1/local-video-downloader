@@ -57,9 +57,6 @@ def _auto_update_loop():
         except Exception:
             pass
 
-_ytdlp_version = _get_ytdlp_version()
-_log(f"[init] yt-dlp version: {_ytdlp_version}")
-
 # ===== LOGGING =====
 LOG_DIR = os.environ.get("LOG_DIR", "/app/logs")
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -98,6 +95,10 @@ def _read_logs():
             return f.read().strip().split("\n")
     except Exception:
         return ["No logs yet"]
+
+# Init yt-dlp version (after _log is defined)
+_ytdlp_version = _get_ytdlp_version()
+_log(f"[init] yt-dlp version: {_ytdlp_version}")
 
 # Simple in-memory cache for extract results (TTL: 300 seconds)
 _cache = {}
