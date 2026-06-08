@@ -58,7 +58,7 @@
 
     // ====================== CONFIGURATION ======================
     // Change this to your local video downloader API server
-    const API_BASE = GM_getValue("local_dl_api", "http://127.0.0.1:8765");
+    const API_BASE = GM_getValue("local_dl_api", "http://100.80.1.3:8765");
 
     // ====================== COMMON UTILS ======================
     const CommonUtils = {
