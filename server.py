@@ -12,11 +12,53 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import time
 from datetime import datetime, timedelta
 import glob
+
+# ===== YT-DLP AUTO-UPDATE =====
+_ytdlp_version = "?"
+
+def _get_ytdlp_version():
+    try:
+        r = subprocess.run(["yt-dlp", "--version"], capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            return r.stdout.strip()
+    except Exception:
+        pass
+    return "?"
+
+def _update_ytdlp():
+    """pip install --upgrade yt-dlp, returns (old_ver, new_ver, output)."""
+    global _ytdlp_version
+    old = _get_ytdlp_version()
+    try:
+        r = subprocess.run(
+            ["pip", "install", "--no-cache-dir", "--upgrade", "yt-dlp"],
+            capture_output=True, text=True, timeout=120
+        )
+        new = _get_ytdlp_version()
+        _ytdlp_version = new
+        _log(f"[update] yt-dlp {old} → {new}")
+        return old, new, r.stdout + r.stderr
+    except Exception as e:
+        _log(f"[update] FAILED: {e}")
+        return old, old, str(e)
+
+def _auto_update_loop():
+    """Background thread: update yt-dlp every 24 hours."""
+    while True:
+        time.sleep(86400)  # 24h
+        try:
+            _update_ytdlp()
+        except Exception:
+            pass
+
+_ytdlp_version = _get_ytdlp_version()
+_log(f"[init] yt-dlp version: {_ytdlp_version}")
 
 # ===== LOGGING =====
 LOG_DIR = os.environ.get("LOG_DIR", "/app/logs")
@@ -304,7 +346,7 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
 
         if parsed.path == "/api/health":
-            self._send_json({"ok": True, "service": "local-video-downloader"})
+            self._send_json({"ok": True, "service": "local-video-downloader", "ytdlp_version": _ytdlp_version})
             return
 
         if parsed.path == "/api/extract":
@@ -361,6 +403,17 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/proxy-download":
             self._handle_proxy_download(parsed)
+            return
+
+        if parsed.path == "/api/update":
+            _log("[update] Manual trigger via API")
+            old, new, output = _update_ytdlp()
+            self._send_json({
+                "ok": old != new,
+                "old_version": old,
+                "new_version": new,
+                "output": output[-2000:]
+            })
             return
 
         self._send_json({"ok": False, "error": "Not found"}, 404)
@@ -465,7 +518,13 @@ def main():
     _log(f"🚀 Server starting on {args.host}:{args.port}")
     _log(f"📁 Logs: {LOG_DIR}/server-YYYY-MM-DD.log (rotate 3 days)")
     _cleanup_logs()
+    
+    # Start background auto-update thread (every 24h)
+    t = threading.Thread(target=_auto_update_loop, daemon=True)
+    t.start()
+    
     print(f"🚀 Local Video Downloader running at http://{args.host}:{args.port}")
+    print(f"   yt-dlp: {_ytdlp_version} (auto-update every 24h)")
     print(f"   API: http://{args.host}:{args.port}/api/extract?url=<video_url>")
     print(f"   UI:  http://{args.host}:{args.port}/")
     print(f"   Logs: {LOG_DIR}/server-YYYY-MM-DD.log")
