@@ -365,41 +365,31 @@ class Handler(BaseHTTPRequestHandler):
 
         self._send_json({"ok": False, "error": "Not found"}, 404)
 
-    def _get_safe_filename(self, url, format_id):
-        """Get sanitized filename from yt-dlp, returns (ascii_safe, unicode_original)."""
+    def _get_video_id(self, url):
+        """Get video ID from yt-dlp — fast, URL-parse only (no network call)."""
         try:
             result = subprocess.run(
-                ["yt-dlp", "--get-filename", "-f", format_id,
-                 "--no-warnings", "--no-playlist", "--socket-timeout", "10", url],
-                capture_output=True, timeout=15,
-                env={**__import__("os").environ, "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"}
+                ["yt-dlp", "--print", "id", "--no-warnings", "--no-playlist",
+                 "--socket-timeout", "5", url],
+                capture_output=True, timeout=10, text=True,
+                env={**os.environ, "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"}
             )
             if result.returncode == 0 and result.stdout.strip():
-                raw = result.stdout.decode("utf-8", errors="replace").strip().split("\n")[0]
-                # Extract just the filename (remove path)
-                name = raw.rsplit("/", 1)[-1] if "/" in raw else raw
-                # Remove extension
-                if "." in name:
-                    name = name.rsplit(".", 1)[0]
-                # Create ASCII-safe version (drop all non-ASCII)
-                safe = "".join(c if ord(c) < 128 and (c.isalnum() or c in " ._-") else "_" for c in name).strip("_")[:100]
-                if not safe or safe == "_":
-                    safe = "video"
-                return safe, name
-        except Exception as e:
-            print(f"[filename] failed: {e}")
-        return "video", "video"
+                vid = result.stdout.strip().split("\n")[0].strip()
+                # Sanitize: only allow alphanumeric, dash, underscore
+                vid = "".join(c if c.isalnum() or c in "-_" else "_" for c in vid).strip("_")
+                if vid:
+                    return vid
+        except Exception:
+            pass
+        return "video"
 
     def _stream_video(self, url, format_id):
         """Stream video to client using yt-dlp stdout pipe — single call, no separate extract."""
         _log(f"[download] START url={url[:120]} format={format_id}")
         t0 = time.time()
         
-        try:
-            safe_name, orig_name = self._get_safe_filename(url, format_id)
-        except Exception as e:
-            _log(f"[download] filename error: {e}")
-            safe_name, orig_name = "video", "video"
+        vid = self._get_video_id(url)
         ext = "mp4"
 
         cmd = [
@@ -417,7 +407,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "video/mp4")
             self.send_header("Access-Control-Allow-Origin", "*")
-            disp = f'attachment; filename="{safe_name}.{ext}"'
+            disp = f'attachment; filename="{vid}.{ext}"'
             self.send_header("Content-Disposition", disp)
             self.end_headers()
 
@@ -443,7 +433,7 @@ class Handler(BaseHTTPRequestHandler):
                 _log(f"[download] FAILED rc={proc.returncode} size={total_bytes} time={elapsed:.1f}s")
                 _log(f"[download] STDERR: {err[:500]}")
             else:
-                _log(f"[download] OK size={total_bytes} time={elapsed:.1f}s name={safe_name}")
+                _log(f"[download] OK size={total_bytes} time={elapsed:.1f}s id={vid}")
                 
         except Exception as e:
             _log(f"[download] ERROR: {e}")
