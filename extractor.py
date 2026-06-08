@@ -192,3 +192,62 @@ if __name__ == "__main__":
     url = sys.argv[1]
     result = extract(url)
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def get_direct_url(url: str, format_id: str = "best", proxy: str = None) -> dict:
+    """Get the actual direct download URL with proper headers for a specific format.
+    
+    Returns: {"ok": true, "url": "...", "headers": {...}} or {"ok": false, "error": "..."}
+    """
+    cmd = [
+        YT_DLP_BIN, url,
+        "-f", format_id,
+        "--get-url",
+        "--no-warnings",
+        "--no-playlist",
+        "--socket-timeout", "30",
+    ]
+    if proxy:
+        cmd.extend(["--proxy", proxy])
+
+    try:
+        result_dl = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result_dl.returncode != 0 or not result_dl.stdout.strip():
+            return {"ok": False, "error": result_dl.stderr.strip()[-500:] or "No URL returned"}
+        
+        direct_url = result_dl.stdout.strip().split("\n")[0]
+
+        # Get the required headers
+        cmd_headers = [
+            YT_DLP_BIN, url,
+            "-f", format_id,
+            "--dump-json",
+            "--no-warnings",
+            "--no-playlist",
+            "--socket-timeout", "30",
+        ]
+        if proxy:
+            cmd_headers.extend(["--proxy", proxy])
+        
+        result_json = subprocess.run(cmd_headers, capture_output=True, text=True, timeout=60)
+        headers = {}
+        cookies = ""
+        if result_json.returncode == 0 and result_json.stdout.strip():
+            raw = json.loads(result_json.stdout.strip())
+            # Get the format-specific headers
+            for fmt in raw.get("formats", []):
+                if fmt.get("format_id") == format_id:
+                    headers = fmt.get("http_headers", {})
+                    cookies = fmt.get("cookies", "")
+                    break
+            # Fallback to top-level headers
+            if not headers:
+                headers = raw.get("http_headers", {})
+        
+        if cookies:
+            headers["Cookie"] = cookies.split("; Domain=")[0] if "Domain=" in cookies else cookies
+
+        return {"ok": True, "url": direct_url, "headers": headers}
+
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:500]}

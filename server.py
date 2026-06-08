@@ -10,13 +10,14 @@ Endpoints:
 
 import json
 import os
+import subprocess
 import sys
 import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # Add extractor to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from extractor import extract, extract_simple
+from extractor import extract, extract_simple, get_direct_url
 
 # Optional proxy for yt-dlp (for GFW-blocked platforms)
 YTDLP_PROXY = os.environ.get("YTDLP_PROXY", "")
@@ -234,7 +235,71 @@ class Handler(BaseHTTPRequestHandler):
             self._send_html(HTML)
             return
 
+        if parsed.path == "/api/proxy-download":
+            self._handle_proxy_download(parsed)
+            return
+
         self._send_json({"ok": False, "error": "Not found"}, 404)
+
+    def _handle_proxy_download(self, parsed):
+        """Proxy download: use yt-dlp to download video to stdout and stream to client."""
+        qs = urllib.parse.parse_qs(parsed.query)
+        url = qs.get("url", [""])[0]
+        format_id = qs.get("format", ["best"])[0]
+
+        if not url:
+            self._send_json({"ok": False, "error": "Missing ?url= parameter"}, 400)
+            return
+
+        # Use yt-dlp to download directly to stdout — it handles all auth/session/headers internally
+        cmd = [
+            "yt-dlp", url,
+            "-f", format_id,
+            "-o", "-",           # output to stdout
+            "--no-warnings",
+            "--no-playlist",
+            "--socket-timeout", "30",
+            "--no-progress",      # suppress progress bar on stderr
+            "--quiet",            # be quiet on stderr
+        ]
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Disposition", "attachment; filename=\"video.mp4\"")
+            self.end_headers()
+
+            # Stream yt-dlp stdout to client
+            chunk_size = 64 * 1024
+            while True:
+                chunk = proc.stdout.read(chunk_size)
+                if not chunk:
+                    break
+                try:
+                    self.wfile.write(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    proc.kill()
+                    return
+
+            proc.wait(timeout=10)
+            # Check if yt-dlp succeeded
+            if proc.returncode != 0:
+                stderr_out = proc.stderr.read().decode("utf-8", errors="ignore")
+                # Client already got partial data, log the error
+                print(f"[proxy-download] yt-dlp error: {stderr_out[:200]}")
+
+        except Exception as e:
+            try:
+                self._send_json({"ok": False, "error": f"Download failed: {e}"}, 502)
+            except Exception:
+                pass
 
 
 def main():

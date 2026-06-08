@@ -40,6 +40,9 @@
 // @connect     localhost
 // @connect     127.0.0.1
 // @connect     100.80.1.68
+// @connect     100.80.1.3
+// @connect     100.80.4.1
+// @connect     100.80.5.1
 // @noframes
 // @license     MIT
 // @run-at      document-start
@@ -96,29 +99,35 @@
             return (size / kb).toFixed(decimals) + " KB";
         },
 
-        // ===== LOCAL API CALL =====
-        apiExtract: async function(url) {
-            try {
-                const apiUrl = API_BASE + "/api/extract?url=" + encodeURIComponent(url);
-                const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(30000) });
-                if (!resp.ok) throw new Error("API returned " + resp.status);
-                return await resp.json();
-            } catch (e) {
-                console.error("[LocalDL] API error:", e);
-                return { ok: false, error: e.message };
-            }
+        // ===== LOCAL API CALL (uses GM_xmlhttpRequest to bypass mixed-content blocking) =====
+        _gmRequest: function(url) {
+            return new Promise((resolve, reject) => {
+                GM_xmlhttpRequest({
+                    method: "GET",
+                    url: url,
+                    timeout: 30000,
+                    onload: function(resp) {
+                        try {
+                            resolve(JSON.parse(resp.responseText));
+                        } catch (e) {
+                            reject(new Error("Invalid JSON response"));
+                        }
+                    },
+                    onerror: function(err) { reject(new Error("Network error: " + (err.status || "unknown"))); },
+                    ontimeout: function() { reject(new Error("Request timed out")); },
+                    onabort: function() { reject(new Error("Request aborted")); }
+                });
+            });
         },
 
-        apiExtractSimple: async function(url) {
-            try {
-                const apiUrl = API_BASE + "/api/extract-simple?url=" + encodeURIComponent(url);
-                const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(30000) });
-                if (!resp.ok) throw new Error("API returned " + resp.status);
-                return await resp.json();
-            } catch (e) {
-                console.error("[LocalDL] API error:", e);
-                return { ok: false, error: e.message };
-            }
+        apiExtract: function(url) {
+            const apiUrl = API_BASE + "/api/extract?url=" + encodeURIComponent(url);
+            return this._gmRequest(apiUrl);
+        },
+
+        apiExtractSimple: function(url) {
+            const apiUrl = API_BASE + "/api/extract-simple?url=" + encodeURIComponent(url);
+            return this._gmRequest(apiUrl);
         },
 
         showFormatSelector: async function(url) {
@@ -179,7 +188,7 @@
                 const bestBtn = document.createElement("button");
                 bestBtn.style.cssText = "width:100%;padding:12px;margin-bottom:12px;background:#238636;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;";
                 bestBtn.textContent = "⬇ " + t.best + (data.best_format ? " (" + (data.best_format.resolution || "HD") + ")" : "");
-                bestBtn.onclick = () => { window.open(data.best_url, "_blank"); this._removeFormatUI(); };
+                bestBtn.onclick = () => { window.open(API_BASE + "/api/proxy-download?url=" + encodeURIComponent(sourceUrl) + "&format=best", "_blank"); this._removeFormatUI(); };
                 formatsDiv.appendChild(bestBtn);
             }
 
@@ -201,7 +210,7 @@
 </span>
 <span style="color:#7ee787;font-size:12px;">${f.filesize ? CommonUtils.formatBytes(f.filesize) : ""}</span>`;
 
-                row.onclick = () => { window.open(f.url, "_blank"); this._removeFormatUI(); };
+                row.onclick = () => { window.open(API_BASE + "/api/proxy-download?url=" + encodeURIComponent(sourceUrl) + "&format=" + f.format_id, "_blank"); this._removeFormatUI(); };
                 formatsDiv.appendChild(row);
             });
         },
