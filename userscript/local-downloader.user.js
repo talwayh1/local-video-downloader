@@ -58,6 +58,9 @@
 
 (function() {
     'use strict';
+    console.log('[LocalDL] ✅ Script loaded v2.0.0');
+    console.log('[LocalDL] 📍 Page:', window.location.href);
+    console.log('[LocalDL] 🔗 API:', API_BASE);
 
     // ====================== CONFIGURATION ======================
     // Change this to your local video downloader API server
@@ -101,6 +104,7 @@
 
         // ===== LOCAL API CALL (uses GM_xmlhttpRequest to bypass mixed-content blocking) =====
         _gmRequest: function(url) {
+            console.log('[LocalDL] 🌐 API call:', url.substring(0, 120));
             return new Promise((resolve, reject) => {
                 GM_xmlhttpRequest({
                     method: "GET",
@@ -108,14 +112,19 @@
                     timeout: 30000,
                     onload: function(resp) {
                         try {
+                            console.log('[LocalDL] ✅ API response:', resp.status, resp.responseText.substring(0, 100));
                             resolve(JSON.parse(resp.responseText));
                         } catch (e) {
+                            console.error('[LocalDL] ❌ JSON parse error:', e);
                             reject(new Error("Invalid JSON response"));
                         }
                     },
-                    onerror: function(err) { reject(new Error("Network error: " + (err.status || "unknown"))); },
-                    ontimeout: function() { reject(new Error("Request timed out")); },
-                    onabort: function() { reject(new Error("Request aborted")); }
+                    onerror: function(err) {
+                        console.error('[LocalDL] ❌ Network error:', err.status, err);
+                        reject(new Error("Network error: " + (err.status || "unknown")));
+                    },
+                    ontimeout: function() { console.error('[LocalDL] ❌ Timeout'); reject(new Error("Request timed out")); },
+                    onabort: function() { console.error('[LocalDL] ❌ Aborted'); reject(new Error("Request aborted")); }
                 });
             });
         },
@@ -231,6 +240,7 @@
         },
 
         localDownloaderEvent: async function(url) {
+            console.log('[LocalDL] 📥 Download clicked:', url);
             this.showFormatSelector(url);
         },
 
@@ -372,7 +382,7 @@
                 }
                 button.classList.remove("localdl-hover");
                 const found = pickTarget();
-                if (found) { state.activeTarget = found; button.style.display = "flex"; updatePos(); }
+                if (found) { state.activeTarget = found; button.style.display = "flex"; updatePos(); console.log('[LocalDL] 🎯 HUD shown on', found.tagName); }
                 else { button.style.display = "none"; state.activeTarget = null; }
             };
 
@@ -467,7 +477,11 @@
             }, 800);
         },
         run() { this.genrate(); this.genrateShorts(); },
-        start() { if (/youtube\.com/.test(window.location.host)) this.run(); }
+        start() {
+            const isRun = /youtube\.com/.test(window.location.host);
+            console.log('[LocalDL] YouTube:', isRun ? '🟢 ACTIVE' : '⏭️ skip', window.location.host);
+            if (isRun) this.run();
+        }
     };
 
     const TiktokDownloader = {
@@ -491,7 +505,11 @@
             CommonUtils.onLocationChange(updatePos);
             updatePos();
         },
-        start() { if (/tiktok\.com/.test(window.location.host)) this.run(); }
+        start() {
+            const isRun = /tiktok\.com/.test(window.location.host);
+            console.log('[LocalDL] TikTok:', isRun ? '🟢 ACTIVE' : '⏭️ skip', window.location.host);
+            if (isRun) this.run();
+        }
     };
 
     const ThreadsDownloader = {
