@@ -47,6 +47,16 @@ def _cleanup_logs():
         except Exception:
             pass
 
+def _read_logs():
+    """Return today's log lines as a list."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    log_file = os.path.join(LOG_DIR, f"server-{today}.log")
+    try:
+        with open(log_file, "r") as f:
+            return f.read().strip().split("\n")
+    except Exception:
+        return ["No logs yet"]
+
 # Simple in-memory cache for extract results (TTL: 300 seconds)
 _cache = {}
 _CACHE_TTL = 300
@@ -69,6 +79,49 @@ YTDLP_PROXY = os.environ.get("YTDLP_PROXY", "")
 if not YTDLP_PROXY:
     YTDLP_PROXY = os.environ.get("http_proxy", "")
 
+LOG_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Downloader Logs</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:monospace;background:#0d1117;color:#c9d1d9;padding:20px}
+h1{color:#58a6ff;margin-bottom:10px;font-size:1.2em}
+.toolbar{display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap}
+.toolbar button{padding:6px 12px;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;cursor:pointer;font-family:monospace;font-size:12px}
+.toolbar button:hover{background:#30363d}
+.toolbar .count{color:#8b949e;font-size:12px;margin-left:auto}
+.logs{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px;max-height:75vh;overflow-y:auto;white-space:pre-wrap;font-size:12px;line-height:1.6}
+.ok{color:#7ee787}.fail{color:#f85149}.info{color:#58a6ff}.warn{color:#d2991d}
+</style>
+</head>
+<body>
+<h1>📋 Downloader Logs</h1>
+<div class="toolbar">
+<button onclick="location.reload()">🔄 Refresh</button>
+<button onclick="showLines(50)">50</button>
+<button onclick="showLines(100)">100</button>
+<button onclick="showLines(200)">200</button>
+<button onclick="showLines(9999)">All</button>
+<span class="count" id="lineCount"></span>
+</div>
+<div class="logs" id="logs">Loading...</div>
+<script>
+var allLines=[];
+function color(l){
+if(l.includes('FAILED')||l.includes('ERROR'))return'<span class=fail>'+l+'</span>';
+if(l.includes('OK size'))return'<span class=ok>'+l+'</span>';
+if(l.includes('START')||l.includes('CMD:'))return'<span class=info>'+l+'</span>';
+return l}
+function showLines(n){
+var L=n>=allLines.length?allLines:allLines.slice(-n);
+document.getElementById('logs').innerHTML=L.map(color).join('\\n');
+document.getElementById('lineCount').textContent=L.length+' / '+allLines.length+' lines'}
+fetch('/api/logs-raw').then(r=>r.json()).then(d=>{allLines=d.lines||[];showLines(50)});
+setInterval(()=>fetch('/api/logs-raw').then(r=>r.json()).then(d=>{allLines=d.lines||[];showLines(50)}),10000);
+</script>
+</body>
 HTML = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -295,6 +348,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/" or parsed.path == "":
             self._send_html(HTML)
+            return
+
+        if parsed.path == "/logs":
+            self._send_html(LOG_HTML)
+            return
+
+        if parsed.path == "/api/logs-raw":
+            self._send_json({"ok": True, "lines": _read_logs()})
             return
 
         if parsed.path == "/api/proxy-download":

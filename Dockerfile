@@ -23,5 +23,7 @@ EXPOSE 8765
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health')"
 
-# Run server
-CMD ["python3", "server.py", "--port", "8765", "--host", "0.0.0.0"]
+# Auto-update yt-dlp on startup, then run server
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+CMD ["/entrypoint.sh"]
