@@ -147,7 +147,7 @@ h1{color:#58a6ff;margin-bottom:10px;font-size:1.2em}
 <body>
 <h1>📋 Downloader Logs</h1>
 <div class="toolbar">
-<button onclick="location.reload()">🔄 Refresh</button>
+<button onclick="autoRefresh=!autoRefresh;this.textContent=autoRefresh?'⏸ Pause':'▶ Resume'">⏸ Pause</button>
 <button onclick="showLines(50)">50</button>
 <button onclick="showLines(100)">100</button>
 <button onclick="showLines(200)">200</button>
@@ -157,17 +157,26 @@ h1{color:#58a6ff;margin-bottom:10px;font-size:1.2em}
 <div class="logs" id="logs">Loading...</div>
 <script>
 var allLines=[];
+var autoRefresh=true;
 function color(l){
 if(l.includes('FAILED')||l.includes('ERROR'))return'<span class=fail>'+l+'</span>';
 if(l.includes('OK size'))return'<span class=ok>'+l+'</span>';
 if(l.includes('START')||l.includes('CMD:'))return'<span class=info>'+l+'</span>';
 return l}
 function showLines(n){
-var L=n>=allLines.length?allLines:allLines.slice(-n);
+var reversed=allLines.slice().reverse();
+var L=n>=reversed.length?reversed:reversed.slice(0,n);
 document.getElementById('logs').innerHTML=L.map(color).join('\\n');
+document.getElementById('logs').scrollTop=0;
 document.getElementById('lineCount').textContent=L.length+' / '+allLines.length+' lines'}
-fetch('/api/logs-raw').then(r=>r.json()).then(d=>{allLines=d.lines||[];showLines(50)});
-setInterval(()=>fetch('/api/logs-raw').then(r=>r.json()).then(d=>{allLines=d.lines||[];showLines(50)}),10000);
+function load(){
+fetch('/api/logs-raw').then(r=>r.json()).then(d=>{
+var prev=allLines.length;
+allLines=d.lines||[];
+if(allLines.length!==prev) showLines(50);
+})}
+load();
+setInterval(()=>{if(autoRefresh)load()},5000);
 </script>
 </body>"""
 
