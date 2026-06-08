@@ -58,9 +58,33 @@
 
 (function() {
     'use strict';
-    console.log('[LocalDL] ✅ Script loaded v2.0.0');
+    console.log('[LocalDL] ✅ Script loaded v2.1');
     console.log('[LocalDL] 📍 Page:', window.location.href);
     console.log('[LocalDL] 🔗 API:', API_BASE);
+    console.log('[LocalDL] 📱 Touch:', 'ontouchstart' in window ? 'YES' : 'no');
+
+    // ====================== MOBILE FLOATING BUTTON ======================
+    function createFloatingButton() {
+        if (document.getElementById('localdl-float')) return;
+        const btn = document.createElement('div');
+        btn.id = 'localdl-float';
+        btn.innerHTML = '⬇';
+        btn.style.cssText = 'position:fixed;bottom:20px;right:20px;width:56px;height:56px;background:#ff0050;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;z-index:2147483646;box-shadow:0 4px 16px rgba(255,0,80,0.5);cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;';
+        btn.onclick = function(e) {
+            e.preventDefault(); e.stopPropagation();
+            console.log('[LocalDL] 📥 Floating button clicked');
+            CommonUtils.localDownloaderEvent(window.location.href);
+        };
+        document.body.appendChild(btn);
+        console.log('[LocalDL] 🔴 Floating button created');
+    }
+
+    // Wait for body, then add button
+    function waitForBody() {
+        if (document.body) { createFloatingButton(); return; }
+        setTimeout(waitForBody, 100);
+    }
+    waitForBody();
 
     // ====================== CONFIGURATION ======================
     // Change this to your local video downloader API server
@@ -240,8 +264,10 @@
         },
 
         localDownloaderEvent: async function(url) {
-            console.log('[LocalDL] 📥 Download clicked:', url);
-            this.showFormatSelector(url);
+            console.log('[LocalDL] 📥 Download:', url);
+            const dlUrl = API_BASE + "/api/download?url=" + encodeURIComponent(url);
+            console.log('[LocalDL] 🔗 Opening:', dlUrl.substring(0, 100));
+            this.openInTab(dlUrl);
         },
 
         findParentByClassContains: function(el, classPart, maxLevel) {
