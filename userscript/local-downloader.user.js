@@ -2,7 +2,7 @@
 // @name        All-in-One Video Downloader – HD (Local API)
 // @description Local video downloader using self-hosted yt-dlp API instead of tool77.com
 // @namespace   AllInOneDownloader_Local
-// @version     2.2
+// @version     2.3
 // @author      Local (modified from Daniel)
 // @include     https://www.ted.com/*
 // @include     https://*.youtube.com/*
@@ -73,14 +73,15 @@
         btn.textContent = '⬇';
         btn.setAttribute('style',
             'position:fixed!important;bottom:20px!important;right:20px!important;' +
-            'width:60px!important;height:60px!important;background:#ff0050!important;' +
+            'width:64px!important;height:64px!important;background:#ff0050!important;' +
             'color:#fff!important;border-radius:50%!important;' +
             'display:flex!important;align-items:center!important;justify-content:center!important;' +
-            'font-size:28px!important;font-weight:bold!important;z-index:2147483646!important;' +
+            'font-size:30px!important;font-weight:bold!important;z-index:2147483646!important;' +
             'box-shadow:0 4px 20px rgba(255,0,80,0.6)!important;' +
             'cursor:pointer!important;user-select:none!important;' +
             '-webkit-tap-highlight-color:transparent!important;' +
-            'pointer-events:auto!important;'
+            'pointer-events:auto!important;' +
+            'animation:localdl-pulse 2s infinite!important;'
         );
         btn.onclick = function(e) {
             e.preventDefault(); e.stopPropagation();
@@ -88,19 +89,39 @@
             window.open(API_BASE + '/api/download?url=' + encodeURIComponent(window.location.href), '_blank');
         };
         btn.ontouchend = btn.onclick;
-        document.body.appendChild(btn);
-        console.log('[LocalDL] 🔴 Floating button CREATED at bottom-right');
-        return true;
+        
+        // Append to <html> instead of <body> — SPA-proof
+        var root = document.documentElement || document.body;
+        if (root) {
+            root.appendChild(btn);
+            console.log('[LocalDL] 🔴 Floating button CREATED (appended to', root.tagName, ')');
+            return true;
+        }
+        return false;
     }
 
-    // TRIPLE insurance: try now, on DOM ready, and after a delay
+    // Pulse animation to make it impossible to miss
+    GM_addStyle('@keyframes localdl-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}');
+
+    // TRIPLE insurance + MutationObserver to survive SPA re-renders
     function tryCreate() {
-        if (document.body) { createFloatingButton(); return; }
+        if (document.documentElement || document.body) {
+            createFloatingButton();
+            return;
+        }
         setTimeout(tryCreate, 50);
     }
     tryCreate();
     document.addEventListener('DOMContentLoaded', createFloatingButton);
     setTimeout(createFloatingButton, 2000);
+
+    // Survive SPA navigation: re-add if removed
+    new MutationObserver(function() {
+        if (!document.getElementById('localdl-float')) {
+            console.log('[LocalDL] 🔄 Button removed by SPA, re-creating...');
+            createFloatingButton();
+        }
+    }).observe(document.documentElement, { childList: true, subtree: true });
 
     // ====================== CONFIGURATION ======================
     // API_BASE already set above — floating button uses it directly
