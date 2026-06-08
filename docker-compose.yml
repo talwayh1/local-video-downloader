@@ -1,0 +1,15 @@
+services:
+  video-downloader:
+    build: .
+    container_name: local-video-downloader
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    # Optional: proxy for platforms blocked in your region
+    # environment:
+    #   - YTDLP_PROXY=http://proxy:8080
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
