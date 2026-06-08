@@ -12,6 +12,10 @@ WORKDIR /app
 # Copy application
 COPY server.py extractor.py ./
 
+# Create logs directory
+RUN mkdir -p /app/logs
+VOLUME ["/app/logs"]
+
 # Expose API port
 EXPOSE 8765
 

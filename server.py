@@ -15,6 +15,37 @@ import sys
 import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import time
+from datetime import datetime, timedelta
+import glob
+
+# ===== LOGGING =====
+LOG_DIR = os.environ.get("LOG_DIR", "/app/logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+def _log(msg):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{ts}] {msg}"
+    print(line, flush=True)
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        with open(os.path.join(LOG_DIR, f"server-{today}.log"), "a") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass
+
+def _cleanup_logs():
+    """Delete log files older than 3 days."""
+    cutoff = datetime.now() - timedelta(days=3)
+    for f in glob.glob(os.path.join(LOG_DIR, "server-*.log")):
+        try:
+            fname = os.path.basename(f)
+            date_str = fname.replace("server-", "").replace(".log", "")
+            file_date = datetime.strptime(date_str, "%Y-%m-%d")
+            if file_date < cutoff:
+                os.remove(f)
+                _log(f"[cleanup] Deleted old log: {fname}")
+        except Exception:
+            pass
 
 # Simple in-memory cache for extract results (TTL: 300 seconds)
 _cache = {}
@@ -228,7 +259,12 @@ class Handler(BaseHTTPRequestHandler):
             if not url:
                 self._send_json({"ok": False, "error": "Missing ?url= parameter"}, 400)
                 return
+            _log(f"[extract] url={url[:120]}")
             result = _cached_extract(url)
+            if result.get("ok"):
+                _log(f"[extract] OK formats={len(result.get('formats',[]))} title={(result.get('title','') or '')[:50]}")
+            else:
+                _log(f"[extract] FAILED: {result.get('error','')[:200]}")
             self._send_json(result)
             return
 
@@ -238,7 +274,12 @@ class Handler(BaseHTTPRequestHandler):
             if not url:
                 self._send_json({"ok": False, "error": "Missing ?url= parameter"}, 400)
                 return
+            _log(f"[extract-simple] url={url[:120]}")
             result = _cached_extract(url, simple=True)
+            if result.get("ok"):
+                _log(f"[extract-simple] OK title={(result.get('title','') or '')[:50]}")
+            else:
+                _log(f"[extract-simple] FAILED: {result.get('error','')[:200]}")
             self._send_json(result)
             return
 
@@ -289,9 +330,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def _stream_video(self, url, format_id):
         """Stream video to client using yt-dlp stdout pipe — single call, no separate extract."""
+        _log(f"[download] START url={url[:120]} format={format_id}")
+        t0 = time.time()
+        
         try:
             safe_name, orig_name = self._get_safe_filename(url, format_id)
-        except Exception:
+        except Exception as e:
+            _log(f"[download] filename error: {e}")
             safe_name, orig_name = "video", "video"
         ext = "mp4"
 
@@ -301,35 +346,45 @@ class Handler(BaseHTTPRequestHandler):
             "-o", "-",
             "--no-warnings", "--no-playlist",
             "--socket-timeout", "30",
-            "--no-progress", "--quiet",
+            "--no-progress",
         ]
+        _log(f"[download] CMD: yt-dlp -f {format_id} --no-progress {url[:100]}")
 
         try:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             self.send_response(200)
             self.send_header("Content-Type", "video/mp4")
             self.send_header("Access-Control-Allow-Origin", "*")
-            # ASCII-only filename for HTTP header (latin-1 safe)
             disp = f'attachment; filename="{safe_name}.{ext}"'
             self.send_header("Content-Disposition", disp)
             self.end_headers()
 
+            total_bytes = 0
             chunk_size = 64 * 1024
             while True:
                 chunk = proc.stdout.read(chunk_size)
                 if not chunk:
                     break
+                total_bytes += len(chunk)
                 try:
                     self.wfile.write(chunk)
                 except (BrokenPipeError, ConnectionResetError):
                     proc.kill()
+                    _log(f"[download] CLIENT-DISCONNECT after {total_bytes} bytes ({time.time()-t0:.1f}s)")
                     return
 
             proc.wait(timeout=10)
+            elapsed = time.time() - t0
+            
             if proc.returncode != 0:
-                err = proc.stderr.read().decode("utf-8", errors="ignore")
-                print(f"[stream] yt-dlp error: {err[:200]}")
+                err = proc.stderr.read().decode("utf-8", errors="replace")
+                _log(f"[download] FAILED rc={proc.returncode} size={total_bytes} time={elapsed:.1f}s")
+                _log(f"[download] STDERR: {err[:500]}")
+            else:
+                _log(f"[download] OK size={total_bytes} time={elapsed:.1f}s name={safe_name}")
+                
         except Exception as e:
+            _log(f"[download] ERROR: {e}")
             try:
                 self._send_json({"ok": False, "error": f"Download failed: {e}"}, 502)
             except Exception:
@@ -355,9 +410,13 @@ def main():
     args = parser.parse_args()
 
     server = HTTPServer((args.host, args.port), Handler)
+    _log(f"🚀 Server starting on {args.host}:{args.port}")
+    _log(f"📁 Logs: {LOG_DIR}/server-YYYY-MM-DD.log (rotate 3 days)")
+    _cleanup_logs()
     print(f"🚀 Local Video Downloader running at http://{args.host}:{args.port}")
     print(f"   API: http://{args.host}:{args.port}/api/extract?url=<video_url>")
     print(f"   UI:  http://{args.host}:{args.port}/")
+    print(f"   Logs: {LOG_DIR}/server-YYYY-MM-DD.log")
     print()
     try:
         server.serve_forever()
